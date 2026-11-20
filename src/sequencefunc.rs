@@ -35,6 +35,11 @@ impl<T: BlockSizeUser + Clone + Digest> SequenceFunc<T> {
     pub fn new(fn_id: u128, key: &impl AsRef<[u8]>) -> Self {
         let key_len = key.as_ref().len() as u128;
 
+        // K_I and K_O are Zeroizing and are wiped when they go out of scope at
+        // the end of this function (best effort; see common::derive_value).
+        // The keyed hash states can't be wiped: digest 0.10 hash types don't
+        // implement Zeroize.
+
         // First, set up the inner hash: derive the inner key, compute the header
         let key_inner = common::derive_value::<T>(key.as_ref(), common::TWEAK_KEY_INNER);
         let hdr_inner = Self::get_inner_header(fn_id, key_len);
