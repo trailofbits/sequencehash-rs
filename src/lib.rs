@@ -2,6 +2,7 @@ mod sequencefunc;
 mod common;
 
 use crypto_common::BlockSizeUser;
+pub use crypto_common::InvalidLength;
 use digest::Digest;
 
 pub struct SequenceHash<T> (sequencefunc::SequenceFunc<T>);
@@ -9,12 +10,16 @@ pub struct SequenceMAC<T> (sequencefunc::SequenceFunc<T>);
 
 
 impl<T: BlockSizeUser + Clone + Digest> SequenceMAC<T> {
-    pub fn new(key: &impl AsRef<[u8]>) -> Self {
+    /// Creates a SequenceMAC from `key`.
+    ///
+    /// Returns [`InvalidLength`] if the key is shorter than 32 bytes. Keys of
+    /// 32 bytes or more are accepted.
+    pub fn new(key: &impl AsRef<[u8]>) -> Result<Self, InvalidLength> {
         if key.as_ref().len() < common::MIN_KEY_LEN {
-            panic!("Key too short for SequenceMAC");
+            return Err(InvalidLength);
         }
 
-        Self(sequencefunc::SequenceFunc::new(common::FUNC_ID_SEQMAC, &key.as_ref()))
+        Ok(Self(sequencefunc::SequenceFunc::new(common::FUNC_ID_SEQMAC, &key.as_ref())))
     }
 
     pub fn add(&mut self, data: &impl AsRef<[u8]>) {
@@ -132,7 +137,7 @@ mod tests {
             0xbd, 0x12, 0x16, 0x35, 0xc5, 0xc7, 0x32
         ];
 
-        let mut hasher = SequenceMAC::<sha2::Sha256>::new(&key);
+        let mut hasher = SequenceMAC::<sha2::Sha256>::new(&key).unwrap();
         hasher.add(&input0);
         hasher.add(&input1);
         hasher.add(&input2);
@@ -144,8 +149,30 @@ mod tests {
     #[test]
     fn test_mac_block_size() {
         let key: Vec<u8> = vec![0x00u8; 32];
-        let mac = SequenceMAC::<sha2::Sha256>::new(&key);
+        let mac = SequenceMAC::<sha2::Sha256>::new(&key).unwrap();
         assert_eq!(mac.block_size(), sha2::Sha256::block_size());
+    }
+
+    #[test]
+    fn test_mac_rejects_short_key() {
+        for len in [0usize, 1, 31] {
+            let key = vec![0x00u8; len];
+            assert!(
+                matches!(
+                    SequenceMAC::<sha2::Sha256>::new(&key),
+                    Err(crate::InvalidLength)
+                ),
+                "len {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mac_accepts_min_and_longer_key() {
+        for len in [32usize, 33, 64] {
+            let key = vec![0x00u8; len];
+            assert!(SequenceMAC::<sha2::Sha256>::new(&key).is_ok(), "len {len}");
+        }
     }
 
     #[test]
@@ -157,7 +184,7 @@ mod tests {
     #[test]
     fn test_mac_output_size() {
         let key: Vec<u8> = vec![0x00u8; 32];
-        let mac = SequenceMAC::<sha2::Sha256>::new(&key);
+        let mac = SequenceMAC::<sha2::Sha256>::new(&key).unwrap();
         assert_eq!(mac.output_size(), sha2::Sha256::output_size());
     }
 
