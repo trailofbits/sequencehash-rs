@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # C2SP/CCTV commit whose sequencehash/ vectors match tests/data/cctv.sha256.
+  CCTV_COMMIT: 50a8ecf2a220f4c8bdc4f085789b8e85c26829e7
+
+jobs:
+  test:
+    name: Rust ${{ matrix.rust }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.85 is the minimum for edition 2024; plus the current stable release.
+        rust: ["1.85", stable]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust ${{ matrix.rust }}
+        run: |
+          rustup toolchain install "${{ matrix.rust }}" --profile minimal
+          rustup override set "${{ matrix.rust }}"
+
+      - name: Fetch C2SP/CCTV vectors
+        run: |
+          git init -q "$RUNNER_TEMP/cctv"
+          git -C "$RUNNER_TEMP/cctv" fetch -q --depth 1 https://github.com/C2SP/CCTV "$CCTV_COMMIT"
+          git -C "$RUNNER_TEMP/cctv" checkout -q FETCH_HEAD
+
+      - name: cargo test
+        env:
+          SEQUENCEHASH_CCTV_DIR: ${{ runner.temp }}/cctv/sequencehash
+        run: cargo test
